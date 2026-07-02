@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Navbar from '../../components/Navbar';
 import { useLang } from '../_app';
-import api from '../../lib/api';
+import api, { seekerApi, getSeekerToken, getSeekerAccount } from '../../lib/api';
+import ZonePicker from '../../components/ZonePicker';
 
 const EMPTY_SEEKER = { name: '', age: '', sex: 'male', zone_city: '', email: '', phone: '', is_first_time: false };
 
@@ -37,9 +38,38 @@ export default function EventPage() {
   const [errors, setErrors] = useState({});
   const [donationAmount, setDonationAmount] = useState(0);
 
+  const [seekerAccount, setSeekerAccount] = useState(null);
+  const [familyMembers, setFamilyMembers] = useState([]);
+  const [categoryOverrides, setCategoryOverrides] = useState({});
+
   useEffect(() => {
     if (!id) return;
-    api.get(`/events/${id}`).then(r => setEvent(r.data)).finally(() => setLoading(false));
+    // Redirect to login if not logged in
+    if (!getSeekerToken()) {
+      router.push(`/login?next=/events/${id}`);
+      return;
+    }
+    const acct = getSeekerAccount();
+    setSeekerAccount(acct);
+
+    // Load event, family members and volunteer options in parallel
+    Promise.all([
+      api.get(`/events/${id}`),
+      seekerApi.get('/family'),
+     ]).then(([evRes, famRes]) => {
+      setEvent(evRes.data);
+      setFamilyMembers(famRes.data);
+
+      // Pre-populate with seeker themselves if no family members
+      if (famRes.data.length === 0 && acct) {
+        setSeekers([{
+          ...EMPTY_SEEKER,
+          name: acct.name || '',
+          email: acct.email || '',
+          phone: acct.phone || ''
+        }]);
+      }
+    }).finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
@@ -93,7 +123,13 @@ export default function EventPage() {
       const grandTotal = ticketTotal + donationAmt;
       const payload = {
         event_id: id,
-        seekers: seekers.map(s => ({ ...s, age: parseInt(s.age) })),
+        account_id: seekerAccount?.id,
+        seekers: seekers.map((s, i) => ({
+          ...s,
+          age: parseInt(s.age),
+          age_category: categoryOverrides[i] || undefined, // override if set
+          category_overridden: !!categoryOverrides[i],
+        })),
         discount_code: discountCode || undefined,
         language: lang,
         donation_amount: donationAmt
@@ -221,8 +257,22 @@ export default function EventPage() {
               </div>
             )}
 
+            {/* Family member quick-select — collapsible */}
+            {familyMembers.length > 0 && (
+              <FamilySelector
+                familyMembers={familyMembers}
+                seekers={seekers}
+                setSeekers={setSeekers}
+                seekerAccount={seekerAccount}
+                onAddNew={addSeeker}
+                tier={tier}
+                categoryOverrides={categoryOverrides}
+                setCategoryOverrides={setCategoryOverrides}
+              />
+            )}
+            {/* Only show manual entry form for seekers NOT from family selector */}
             <div className="mb-6 space-y-5">
-              {seekers.map((s, i) => (
+              {seekers.filter(s => !s._family_id).map((s, i) => (
                 <div key={i} className="card border-2 border-purple-100">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-semibold text-gray-700">{seekers.length > 1 ? `Seeker ${i + 1}` : 'Your details'}</h3>
@@ -241,11 +291,25 @@ export default function EventPage() {
                         <input className={`input ${errors[`${i}_age`] ? 'border-red-400' : ''}`}
                           type="number" min="1" max="120"
                           value={s.age} onChange={e => updateSeeker(i, 'age', e.target.value)} placeholder="Age" />
-                        {s.age && getCategory(s.age, tier) && (
-                          <span className={`mt-1 inline-block badge-${getCategory(s.age, tier)}`}>
-                            {t[getCategory(s.age, tier)]}
-                          </span>
-                        )}
+                       {s.age && getCategory(s.age, tier) && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className={`badge-${categoryOverrides[i] || getCategory(s.age, tier)}`}>
+                          {categoryOverrides[i]
+                            ? categoryOverrides[i].charAt(0).toUpperCase() + categoryOverrides[i].slice(1)
+                            : t[getCategory(s.age, tier)]}
+                        </span>
+                        <select
+                          className="text-xs border border-gray-200 rounded-lg px-2 py-0.5 text-gray-600"
+                          value={categoryOverrides[i] || getCategory(s.age, tier)}
+                          onChange={e => setCategoryOverrides(prev => ({ ...prev, [i]: e.target.value === getCategory(s.age, tier) ? undefined : e.target.value }))}
+                        >
+                          <option value={getCategory(s.age, tier)}>Default ({getCategory(s.age, tier)})</option>
+                          {['child', 'yuva', 'adult'].filter(c => c !== getCategory(s.age, tier)).map(c => (
+                            <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                         {errors[`${i}_age`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_age`]}</p>}
                       </div>
                       <div>
@@ -263,8 +327,10 @@ export default function EventPage() {
                     </div>
                     <div>
                       <label className="label">{t.city}</label>
-                      <input className="input" value={s.zone_city}
-                        onChange={e => updateSeeker(i, 'zone_city', e.target.value)} placeholder="City or zone name" />
+                      <ZonePicker
+                        value={s.zone_city}
+                        onChange={v => updateSeeker(i, 'zone_city', v)}
+                      />
                     </div>
                     <div>
                       <label className="label">{t.email} <span className="text-gray-400 font-normal">(optional)</span></label>
@@ -297,11 +363,15 @@ export default function EventPage() {
               ))}
             </div>
 
-            <button onClick={addSeeker}
-              className="w-full py-3 border-2 border-dashed border-purple-300 text-primary rounded-xl text-sm font-medium hover:bg-purple-50 mb-6">
-              {t.addSeeker}
-            </button>
+            {/* Show manual add button only when needed */}
+            {seekers.filter(s => !s._family_id).length > 0 && (
+              <button onClick={addSeeker}
+                className="w-full py-3 border-2 border-dashed border-purple-300 text-primary rounded-xl text-sm font-medium hover:bg-purple-50 mb-6">
+                {t.addSeeker}
+              </button>
+            )}
 
+            
             {event.discount_enabled && (
               <div className="card mb-6">
                 <label className="label">{t.discountCode}</label>
@@ -321,10 +391,15 @@ export default function EventPage() {
 
             <div className="card mb-6 bg-gray-50">
               <h3 className="font-semibold text-gray-700 mb-3">Order Summary</h3>
-              {seekers.map((s, i) => s.age ? (
+              {seekers.map((s, i) => s.name ? (
                 <div key={i} className="flex justify-between text-sm py-1.5 border-b border-gray-200">
-                  <span className="text-gray-600">{s.name || `Seeker ${i+1}`}</span>
-                  <span>{tier.is_free ? t.free : `₹${getPrice(s, tier)}`}</span>
+                  <span className="text-gray-600">
+                    {s.name}
+                    {categoryOverrides[i] && (
+                      <span className="text-xs text-amber-500 ml-1">({categoryOverrides[i]})</span>
+                    )}
+                  </span>
+                  <span>{tier.is_free ? t.free : `₹${getPrice({...s, age_category: categoryOverrides[i]}, tier)}`}</span>
                 </div>
               ) : null)}
               {discountAmt > 0 && (
@@ -369,6 +444,164 @@ export default function EventPage() {
         )}
       </div>
     </>
+  );
+}
+
+// ── Family Selector with collapsible details ──────────────────────
+function FamilySelector({ familyMembers, seekers, setSeekers, seekerAccount, onAddNew, tier, categoryOverrides, setCategoryOverrides }) {
+  const [expanded, setExpanded] = useState({});
+
+  const toggleExpand = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const isSelected = (m) => seekers.some(s => s.name === m.name && s._family_id === m.id);
+
+  const toggle = (m) => {
+    if (isSelected(m)) {
+      setSeekers(prev => prev.filter(s => s._family_id !== m.id));
+    } else {
+      setSeekers(prev => {
+        const withoutEmpty = prev.filter(s => s.name.trim());
+        return [...withoutEmpty, {
+          name: m.name, age: (m.current_age || m.age).toString(), sex: m.sex,
+          zone_city: m.zone_city || '', email: m.email || '',
+          phone: m.phone || seekerAccount?.phone || '',
+          is_first_time: false, _family_id: m.id,
+          volunteer_interests: m.volunteer_interests || []
+        }];
+      });
+    }
+  };
+
+  return (
+    <div className="card mb-5 bg-purple-50 border-purple-100">
+      <h3 className="font-semibold text-gray-700 mb-3 text-sm">👨‍👩‍👧 Select family members</h3>
+      <div className="space-y-2">
+        {familyMembers.map(m => {
+          const selected = isSelected(m);
+          const seekerIndex = seekers.findIndex(s => s._family_id === m.id);
+          const isOpen = expanded[m.id];
+          const defaultCat = getCategory(m.age, tier);
+          const override = seekerIndex >= 0 ? categoryOverrides[seekerIndex] : null;
+          const displayCat = override || defaultCat;
+
+          return (
+            <div key={m.id} className={`bg-white rounded-2xl border transition-all ${selected ? 'border-primary shadow-sm' : 'border-gray-200'}`}>
+              {/* Header row — always visible */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <input type="checkbox" className="w-4 h-4 accent-purple-600 shrink-0"
+                  checked={selected} onChange={() => toggle(m)} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-gray-900 text-sm">{m.name}</span>
+                    <span className="text-xs text-gray-400">{m.relation}</span>
+                    {selected && tier && (
+                      <TicketCategoryPicker
+                        age={m.current_age || m.age}
+                        tier={tier}
+                        sex={m.sex}
+                        value={displayCat}
+                        onChange={(cat) => {
+                          if (seekerIndex >= 0) {
+                            setCategoryOverrides(prev => ({ ...prev, [seekerIndex]: cat === defaultCat ? undefined : cat }));
+                          }
+                        }}
+                      />
+                    )}
+                  </div>
+                  {!isOpen && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Age {m.age} · {m.sex === 'male' ? '♂ Male' : '♀ Female'}
+                      {m.zone_city ? ` · ${m.zone_city}` : ''}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => toggleExpand(m.id)}
+                  className="text-gray-400 hover:text-gray-600 text-xs px-2 py-1 rounded-lg hover:bg-gray-100 shrink-0">
+                  {isOpen ? '▲ Hide' : '▼ Details'}
+                </button>
+              </div>
+
+              {/* Collapsible details */}
+              {isOpen && (
+                <div className="px-4 pb-3 border-t border-gray-100 pt-3 space-y-1">
+                  <p className="text-xs text-gray-500">
+                    Age: {m.current_age || m.age}
+                    {m.date_of_birth && (
+                      <span className="text-gray-400 ml-1">
+                        (DOB: {new Date(m.date_of_birth).toLocaleDateString('en-IN')})
+                      </span>
+                    )}
+                    · {m.sex === 'male' ? '♂ Male' : '♀ Female'}
+                  </p>
+                  {m.zone_city && <p className="text-xs text-gray-500">📍 {m.zone_city}</p>}
+                  {m.phone && <p className="text-xs text-gray-500">📞 {m.phone}</p>}
+                  {m.email && <p className="text-xs text-gray-500">✉️ {m.email}</p>}
+                  {m.volunteer_interests?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {m.volunteer_interests.map(i => (
+                        <span key={i} className="text-xs bg-purple-100 text-primary px-2 py-0.5 rounded-full">{i}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={onAddNew}
+        className="mt-3 text-sm text-primary hover:underline w-full text-left">
+        + Add someone not in your list
+      </button>
+    </div>
+  );
+}
+
+// ── Ticket Category Picker — card style ───────────────────────────
+function TicketCategoryPicker({ age, tier, sex, value, onChange }) {
+  const CATEGORIES = [
+    { key: 'child', label: 'Child', emoji: '👶', desc: `Up to ${tier?.child_max_age || 12} yrs` },
+    { key: 'yuva', label: 'Yuva', emoji: '🧑', desc: `Up to ${tier?.yuva_max_age || 25} yrs` },
+    { key: 'adult', label: 'Adult', emoji: '👤', desc: '26+ yrs' },
+  ];
+
+  const defaultCat = getCategory(age, tier);
+  const isOverridden = value !== defaultCat;
+
+  return (
+    <div className="mt-2 w-full">
+      {isOverridden && (
+        <p className="text-xs text-amber-600 mb-1.5">
+          ⚡ Modified from default ({defaultCat})
+        </p>
+      )}
+      <div className="flex gap-1.5">
+        {CATEGORIES.map(cat => {
+          const price = tier?.is_free ? 0 : parseFloat(tier?.[`${cat.key}_${sex === 'female' ? 'female' : 'male'}_price`] || 0);
+          const isDefault = cat.key === defaultCat;
+          const isSelected = cat.key === value;
+
+          return (
+            <button key={cat.key} type="button" onClick={() => onChange(cat.key)}
+              className={`flex-1 rounded-xl border-2 py-2 px-1 text-center transition-all
+                ${isSelected
+                  ? 'border-primary bg-primary/5'
+                  : 'border-gray-200 bg-white hover:border-purple-300'}`}>
+              <div className="text-lg">{cat.emoji}</div>
+              <div className={`text-xs font-semibold mt-0.5 ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
+                {cat.label}
+              </div>
+              <div className="text-xs text-gray-400">
+                {tier?.is_free ? 'Free' : `₹${price}`}
+              </div>
+              {isDefault && (
+                <div className="text-[10px] text-green-600 font-medium mt-0.5">default</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -441,14 +674,23 @@ function DonationStep({ t, ticketTotal, isFree, submitting, onPay }) {
         </div>
       </div>
 
-      <button onClick={() => onPay(donationAmt)} disabled={submitting}
-        className="btn-primary w-full py-4 text-base">
-        {submitting ? 'Processing…' : (isFree && donationAmt === 0 ? '✓ Confirm Registration' : `Pay ₹${isFree ? donationAmt : grandTotal} →`)}
-      </button>
-      <button onClick={() => onPay(0)} disabled={submitting}
-        className="w-full text-center text-sm text-gray-400 hover:text-gray-600 py-2">
-        {t.skip} — Pay ₹{ticketTotal} only
-      </button>
+      <div className="space-y-3"> {/* Dono buttons ke beech spacing manage karne ke liye wrappers */}
+        <button 
+          onClick={() => onPay(donationAmt)} 
+          disabled={submitting}
+          className="btn-primary w-full py-4 text-base"
+        >
+          {submitting ? 'Processing…' : (isFree && donationAmt === 0 ? '✓ Confirm Registration' : `Pay ₹${isFree ? donationAmt : grandTotal} →`)}
+        </button>
+        
+        <button 
+          onClick={() => onPay(0)} 
+          disabled={submitting}
+          className="w-full text-center text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100 rounded-xl py-3.5 transition-all shadow-sm block"
+        >
+          {t.skip} — Pay ₹{ticketTotal} only
+        </button>
+      </div>
     </div>
   );
 }

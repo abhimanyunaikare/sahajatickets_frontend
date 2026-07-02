@@ -1,7 +1,61 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLang } from '../pages/_app';
-import { LANG_META } from '../lib/api';
+import { LANG_META, getSeekerAccount, clearSeekerSession } from '../lib/api';
+
+function SeekerAccountMenu() {
+  const [account, setAccount] = useState(null);
+  const [open, setOpen] = useState(false);
+  const router = typeof window !== 'undefined' ? require('next/router').useRouter() : null;
+
+  useEffect(() => {
+    setAccount(getSeekerAccount());
+  }, []);
+
+  // Don't show seeker menu on organizer pages
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/organizer')) {
+    return null;
+  }
+
+  if (!account) {
+    return (
+      <Link href="/login" className="text-sm text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50">
+        Login / Register
+      </Link>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50">
+        👤 {account.name || account.phone}
+        <span className="text-gray-400">▾</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-10 bg-white border border-gray-200 rounded-xl shadow-lg p-2 w-44 z-50">
+          <Link href="/my-tickets" onClick={() => setOpen(false)}
+            className="block px-3 py-2 text-sm rounded-lg hover:bg-purple-50 text-gray-700">
+            🎟 My Tickets
+          </Link>
+          <Link href="/family" onClick={() => setOpen(false)}
+            className="block px-3 py-2 text-sm rounded-lg hover:bg-purple-50 text-gray-700">
+            👨‍👩‍👧 Family Members
+          </Link>
+          <Link href="/profile" onClick={() => setOpen(false)}
+            className="block px-3 py-2 text-sm rounded-lg hover:bg-purple-50 text-gray-700">
+            👤 Profile
+          </Link>
+          <hr className="my-1 border-gray-100" />
+          <button onClick={() => { clearSeekerSession(); setAccount(null); setOpen(false); }}
+            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-50 text-red-500">
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Navbar() {
   const { lang, setLang } = useLang();
@@ -16,6 +70,7 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <SeekerAccountMenu />
           {/* Language switcher */}
           <div className="relative">
             <button

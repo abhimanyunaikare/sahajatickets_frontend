@@ -62,18 +62,35 @@ export default function Dashboard() {
               👥 Users
             </Link>
           )}
-        <button onClick={logout} className="text-sm text-gray-400 hover:text-gray-700">Sign out</button>
-      </div>
+          {user?.role === 'organizer' && (
+            <Link href="/organizer/settings" className="text-sm text-gray-500 hover:text-primary font-medium">
+              ⚙️ Settings
+            </Link>
+          )}
+          <Link href="/organizer/change-password" className="text-sm text-gray-400 hover:text-gray-700">🔑 Password</Link>
+        <button onClick={logout} className="text-sm text-gray-400 hover:text-gray-700 ml-2">Sign out</button>
+        
+        </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-bold text-gray-800">My Events</h1>
-          {user?.role === 'organizer' && (
-            <button onClick={() => setShowCreate(true)} className="btn-primary !px-5 !py-2 text-sm">
-              + Create Event
-            </button>
-          )}
-        </div>
+      <div className="flex items-center justify-between mb-6">
+  <h1 className="text-xl font-bold text-gray-800">My Events</h1>
+  <div className="flex items-center gap-3">
+    {user?.role === 'organizer' && (
+      <button onClick={() => setShowCreate(true)} className="btn-primary !px-5 !py-2 text-sm">
+        + Create Event
+      </button>
+    )}
+    {user?.role === 'organizer' && (
+      <Link 
+        href="/organizer/volunteer-directory" 
+        className="inline-flex items-center justify-center border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 rounded-md transition-colors"
+      >
+        🙌 Volunteers
+      </Link>
+    )}
+  </div>
+</div>
 
         {events.length === 0 && !showCreate && (
           <div className="card text-center py-16">

@@ -87,6 +87,10 @@ export default function EventDashboard() {
             className="text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100">
             📷 Check-in
           </Link>
+          <Link href={`/organizer/volunteers/${id}`}
+            className="text-sm px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 font-medium">
+            🙌 Volunteers
+          </Link>
           {user?.role === 'organizer' && (
             <button onClick={exportCSV}
               className="text-sm px-3 py-1.5 bg-purple-50 text-primary rounded-lg font-medium hover:bg-purple-100">

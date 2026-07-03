@@ -56,19 +56,45 @@ export default function EventPage() {
     Promise.all([
       api.get(`/events/${id}`),
       seekerApi.get('/family'),
-     ]).then(([evRes, famRes]) => {
+      api.get('/volunteer-options'),
+      seekerApi.get('/seeker-auth/profile')
+    ]).then(([evRes, famRes, volRes, profileRes]) => {
       setEvent(evRes.data);
-      setFamilyMembers(famRes.data);
+      // setVolunteerOptions(volRes.data);
 
-      // Pre-populate with seeker themselves if no family members
-      if (famRes.data.length === 0 && acct) {
-        setSeekers([{
-          ...EMPTY_SEEKER,
-          name: acct.name || '',
-          email: acct.email || '',
-          phone: acct.phone || ''
-        }]);
-      }
+      const profile = profileRes.data;
+
+      // Build the self member from profile
+      const selfMember = {
+        id: `self_${acct?.id}`,
+        _is_self: true,
+        name: profile.name || acct?.name || '',
+        age: profile.age || null,
+        current_age: profile.age || null,
+        date_of_birth: profile.date_of_birth || null,
+        sex: profile.sex || 'male',
+        relation: 'self',
+        zone_city: profile.zone_city || '',
+        email: profile.email || '',
+        phone: profile.phone || acct?.phone || '',
+        volunteer_interests: profile.volunteer_interests || []
+      };
+
+      // Put self first, then family members
+      setFamilyMembers([selfMember, ...famRes.data]);
+
+      // Auto-select self by default
+      setSeekers([{
+        name: selfMember.name,
+        age: selfMember.current_age?.toString() || '',
+        sex: selfMember.sex || 'male',
+        zone_city: selfMember.zone_city || '',
+        email: selfMember.email || '',
+        phone: selfMember.phone || '',
+        is_first_time: false,
+        _family_id: selfMember.id,
+        volunteer_interests: selfMember.volunteer_interests || []
+      }]);
     }).finally(() => setLoading(false));
   }, [id]);
 
@@ -89,7 +115,11 @@ export default function EventPage() {
     setErrors(e => ({ ...e, [`${i}_${field}`]: undefined }));
   };
 
-  const addSeeker = () => setSeekers([...seekers, { ...EMPTY_SEEKER }]);
+  const addSeeker = () => setSeekers([...seekers, { 
+    ...EMPTY_SEEKER, 
+    _uid: `manual_${Date.now()}` 
+  }]);
+  
   const removeSeeker = (i) => setSeekers(seekers.filter((_, idx) => idx !== i));
 
   const baseTotal = seekers.reduce((sum, s) => sum + getPrice(s, tier), 0);
@@ -270,97 +300,26 @@ export default function EventPage() {
                 setCategoryOverrides={setCategoryOverrides}
               />
             )}
-            {/* Only show manual entry form for seekers NOT from family selector */}
-            <div className="mb-6 space-y-5">
-              {seekers.filter(s => !s._family_id).map((s, i) => (
-                <div key={i} className="card border-2 border-purple-100">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold text-gray-700">{seekers.length > 1 ? `Seeker ${i + 1}` : 'Your details'}</h3>
-                    {i > 0 && <button onClick={() => removeSeeker(i)} className="text-red-400 text-sm hover:text-red-600">Remove</button>}
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="label">{t.yourName} *</label>
-                      <input className={`input ${errors[`${i}_name`] ? 'border-red-400' : ''}`}
-                        value={s.name} onChange={e => updateSeeker(i, 'name', e.target.value)} placeholder="Full name" />
-                      {errors[`${i}_name`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_name`]}</p>}
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="label">{t.age} *</label>
-                        <input className={`input ${errors[`${i}_age`] ? 'border-red-400' : ''}`}
-                          type="number" min="1" max="120"
-                          value={s.age} onChange={e => updateSeeker(i, 'age', e.target.value)} placeholder="Age" />
-                       {s.age && getCategory(s.age, tier) && (
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className={`badge-${categoryOverrides[i] || getCategory(s.age, tier)}`}>
-                          {categoryOverrides[i]
-                            ? categoryOverrides[i].charAt(0).toUpperCase() + categoryOverrides[i].slice(1)
-                            : t[getCategory(s.age, tier)]}
-                        </span>
-                        <select
-                          className="text-xs border border-gray-200 rounded-lg px-2 py-0.5 text-gray-600"
-                          value={categoryOverrides[i] || getCategory(s.age, tier)}
-                          onChange={e => setCategoryOverrides(prev => ({ ...prev, [i]: e.target.value === getCategory(s.age, tier) ? undefined : e.target.value }))}
-                        >
-                          <option value={getCategory(s.age, tier)}>Default ({getCategory(s.age, tier)})</option>
-                          {['child', 'yuva', 'adult'].filter(c => c !== getCategory(s.age, tier)).map(c => (
-                            <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                        {errors[`${i}_age`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_age`]}</p>}
-                      </div>
-                      <div>
-                        <label className="label">{t.sex} *</label>
-                        <div className="flex gap-2 mt-1">
-                          {['male','female'].map(sex => (
-                            <button key={sex} onClick={() => updateSeeker(i, 'sex', sex)}
-                              className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all
-                                ${s.sex === sex ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-600 hover:border-primary'}`}>
-                              {sex === 'male' ? `♂ ${t.male}` : `♀ ${t.female}`}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="label">{t.city}</label>
-                      <ZonePicker
-                        value={s.zone_city}
-                        onChange={v => updateSeeker(i, 'zone_city', v)}
-                      />
-                    </div>
-                    <div>
-                      <label className="label">{t.email} <span className="text-gray-400 font-normal">(optional)</span></label>
-                      <input className="input"
-                        type="email" value={s.email}
-                        onChange={e => updateSeeker(i, 'email', e.target.value)} placeholder="you@example.com" />
-                    </div>
-                    <div>
-                      <label className="label">{t.phone} *</label>
-                      <div className="flex">
-                        <span className="bg-gray-100 border border-r-0 border-gray-300 rounded-l-xl px-3 flex items-center text-sm text-gray-500">+91</span>
-                        <input className={`input rounded-l-none ${errors[`${i}_phone`] ? 'border-red-400' : ''}`} type="tel" value={s.phone}
-                          onChange={e => updateSeeker(i, 'phone', e.target.value)} placeholder="10-digit number" />
-                      </div>
-                      {errors[`${i}_phone`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_phone`]}</p>}
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="w-4 h-4 accent-purple-600"
-                        checked={s.is_first_time} onChange={e => updateSeeker(i, 'is_first_time', e.target.checked)} />
-                      <span className="text-sm text-gray-600">{t.firstTime}</span>
-                    </label>
-                    {s.age && (
-                      <div className="flex justify-between items-center bg-purple-50 rounded-xl px-4 py-2">
-                        <span className="text-sm text-gray-600">{t[getCategory(s.age, tier)] || ''} ({s.sex === 'female' ? '♀' : '♂'})</span>
-                        <span className="font-semibold text-primary">{tier.is_free ? t.free : `₹${getPrice(s, tier)}`}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+           {/* Manual entry for seekers NOT from family selector */}
+           <div className="mb-6 space-y-5">
+              {seekers.map((s, realIndex) => {
+                if (s._family_id) return null;
+                return (
+                  <ManualSeekerForm
+                    key={s._uid || `manual_${realIndex}`}
+                    seeker={s}
+                    index={realIndex}
+                    errors={errors}
+                    t={t}
+                    tier={tier}
+                    categoryOverrides={categoryOverrides}
+                    setCategoryOverrides={setCategoryOverrides}
+                    onUpdate={(field, val) => updateSeeker(realIndex, field, val)}
+                    onRemove={() => removeSeeker(realIndex)}
+                    showRemove={seekers.filter(sk => !sk._family_id).length > 1}
+                  />
+                );
+              })}
             </div>
 
             {/* Show manual add button only when needed */}
@@ -447,6 +406,172 @@ export default function EventPage() {
   );
 }
 
+// ── Manual Seeker Entry Form ──────────────────────────────────────
+function ManualSeekerForm({ seeker: s, index: i, errors, t, tier, categoryOverrides, setCategoryOverrides, onUpdate, onRemove, showRemove }) {
+  const getLocalCategory = (age, tier) => {
+    if (!age || !tier) return null;
+    const a = parseInt(age);
+    if (a <= (tier.child_max_age || 12)) return 'child';
+    if (a <= (tier.yuva_max_age || 25)) return 'yuva';
+    return 'adult';
+  };
+
+  const currentCat = categoryOverrides[i] || getLocalCategory(s.age, tier);
+
+  const CATEGORIES = [
+    { key: 'child', label: 'Child', emoji: '👶' },
+    { key: 'yuva', label: 'Yuva', emoji: '🧑' },
+    { key: 'adult', label: 'Adult', emoji: '👤' },
+  ];
+
+  const getPrice = (cat, sex, tier) => {
+    if (!tier || tier.is_free) return 0;
+    return parseFloat(tier[`${cat}_${sex === 'female' ? 'female' : 'male'}_price`] || 0);
+  };
+
+  return (
+    <div className="card border-2 border-purple-100">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-700">Add new seeker</h3>
+        {showRemove && (
+          <button type="button" onClick={onRemove}
+            className="text-red-400 text-sm hover:text-red-600">Remove</button>
+        )}
+      </div>
+      <div className="space-y-4">
+
+        {/* Name */}
+        <div>
+          <label className="label">{t.yourName} *</label>
+          <input
+            className={`input ${errors[`${i}_name`] ? 'border-red-400' : ''}`}
+            value={s.name}
+            onChange={e => onUpdate('name', e.target.value)}
+            placeholder="Full name"
+            autoComplete="off"
+          />
+          {errors[`${i}_name`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_name`]}</p>}
+        </div>
+
+        {/* Age + Sex */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">{t.age} *</label>
+            <input
+              className={`input ${errors[`${i}_age`] ? 'border-red-400' : ''}`}
+              type="number" min="1" max="120"
+              value={s.age}
+              onChange={e => onUpdate('age', e.target.value)}
+              placeholder="Age"
+            />
+            {errors[`${i}_age`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_age`]}</p>}
+          </div>
+          <div>
+            <label className="label">{t.sex} *</label>
+            <div className="flex gap-2 mt-1">
+              {['male', 'female'].map(sex => (
+                <button key={sex} type="button" onClick={() => onUpdate('sex', sex)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all
+                    ${s.sex === sex ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-600 hover:border-primary'}`}>
+                  {sex === 'male' ? '♂ Male' : '♀ Female'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Ticket category — card style */}
+        {s.age && getLocalCategory(s.age, tier) && (
+          <div>
+            <label className="label">Ticket Category</label>
+            {currentCat !== getLocalCategory(s.age, tier) && (
+              <p className="text-xs text-amber-600 mb-1.5">
+                ⚡ Changed from default ({getLocalCategory(s.age, tier)})
+              </p>
+            )}
+            <div className="flex gap-2">
+              {CATEGORIES.map(cat => {
+                const price = getPrice(cat.key, s.sex, tier);
+                const isDefault = cat.key === getLocalCategory(s.age, tier);
+                const isSelected = cat.key === currentCat;
+                return (
+                  <button key={cat.key} type="button"
+                    onClick={() => setCategoryOverrides(prev => ({
+                      ...prev,
+                      [i]: cat.key === getLocalCategory(s.age, tier) ? undefined : cat.key
+                    }))}
+                    className={`flex-1 rounded-xl border-2 py-2 px-1 text-center transition-all
+                      ${isSelected ? 'border-primary bg-purple-50' : 'border-gray-200 bg-white hover:border-purple-300'}`}>
+                    <div className="text-xl">{cat.emoji}</div>
+                    <div className={`text-xs font-semibold mt-0.5 ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
+                      {cat.label}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {tier?.is_free ? 'Free' : `₹${price}`}
+                    </div>
+                    {isDefault && (
+                      <div className="text-[10px] text-green-600 mt-0.5">default</div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Zone/City */}
+        <div>
+          <label className="label">{t.city}</label>
+          <ZonePicker
+            value={s.zone_city}
+            onChange={v => onUpdate('zone_city', v)}
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="label">{t.email} <span className="text-gray-400 font-normal">(optional)</span></label>
+          <input
+            className="input"
+            type="email"
+            value={s.email}
+            onChange={e => onUpdate('email', e.target.value)}
+            placeholder="you@example.com"
+          />
+        </div>
+
+        {/* Phone */}
+        <div>
+          <label className="label">{t.phone} *</label>
+          <div className="flex">
+            <span className="bg-gray-100 border border-r-0 border-gray-300 rounded-l-xl px-3 flex items-center text-sm text-gray-500">+91</span>
+            <input
+              className={`input rounded-l-none ${errors[`${i}_phone`] ? 'border-red-400' : ''}`}
+              type="tel"
+              value={s.phone}
+              onChange={e => onUpdate('phone', e.target.value)}
+              placeholder="10-digit number"
+            />
+          </div>
+          {errors[`${i}_phone`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_phone`]}</p>}
+        </div>
+
+        {/* Price summary */}
+        {s.age && currentCat && (
+          <div className="flex justify-between items-center bg-purple-50 rounded-xl px-4 py-2.5">
+            <span className="text-sm text-gray-600 capitalize">
+              {currentCat} · {s.sex === 'female' ? '♀ Female' : '♂ Male'}
+            </span>
+            <span className="font-bold text-primary">
+              {tier?.is_free ? 'FREE' : `₹${getPrice(currentCat, s.sex, tier)}`}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Family Selector with collapsible details ──────────────────────
 function FamilySelector({ familyMembers, seekers, setSeekers, seekerAccount, onAddNew, tier, categoryOverrides, setCategoryOverrides }) {
   const [expanded, setExpanded] = useState({});
@@ -491,10 +616,14 @@ function FamilySelector({ familyMembers, seekers, setSeekers, seekerAccount, onA
                 <input type="checkbox" className="w-4 h-4 accent-purple-600 shrink-0"
                   checked={selected} onChange={() => toggle(m)} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-gray-900 text-sm">{m.name}</span>
-                    <span className="text-xs text-gray-400">{m.relation}</span>
-                    {selected && tier && (
+                    {m._is_self ? (
+                      <span className="text-xs bg-purple-100 text-primary px-2 py-0.5 rounded-full font-medium">You</span>
+                    ) : (
+                      <span className="text-xs text-gray-400 capitalize">{m.relation}</span>
+                    )}
+                    {selected && tier && (m.current_age || m.age) && (
                       <TicketCategoryPicker
                         age={m.current_age || m.age}
                         tier={tier}
@@ -510,7 +639,11 @@ function FamilySelector({ familyMembers, seekers, setSeekers, seekerAccount, onA
                   </div>
                   {!isOpen && (
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Age {m.age} · {m.sex === 'male' ? '♂ Male' : '♀ Female'}
+                      {m.current_age || m.age
+                        ? `Age ${m.current_age || m.age} · `
+                        : <span className="text-amber-500">⚠ Add DOB in profile · </span>
+                      }
+                      {m.sex === 'male' ? '♂ Male' : '♀ Female'}
                       {m.zone_city ? ` · ${m.zone_city}` : ''}
                     </p>
                   )}

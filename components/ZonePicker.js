@@ -26,14 +26,14 @@ export default function ZonePicker({ value, onChange, placeholder = 'Select city
   const fetchOptions = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${API_URL}/zone-options`);
+      const r = await fetch(`${API_URL}/zones`);
       const data = await r.json();
       setOptions(data);
     } catch {} finally { setLoading(false); }
   };
 
   const filtered = options.filter(o =>
-    o.label.toLowerCase().includes(search.toLowerCase())
+    (o.label || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const select = (label) => {

@@ -106,7 +106,7 @@ function VolunteerOptionsManager() {
         editingId={editingId}
         editLabel={editLabel}
         setEditLabel={setEditLabel}
-        onEdit={(opt) => { setEditingId(opt.id); setEditLabel(opt.label); }}
+        onEdit={(opt) => { setEditingId(opt.id); setEditLabel(opt.name || opt.label); }}        
         onSaveEdit={saveEdit}
         onCancelEdit={() => setEditingId(null)}
         onToggle={toggleActive}
@@ -127,8 +127,8 @@ function ZoneOptionsManager() {
 
   const fetchOptions = async () => {
     try {
-      const r = await api.get('/zone-options/all');
-      setOptions(r.data);
+        const r = await api.get('/zone-options/all');
+        setOptions(r.data);
     } catch {}
   };
 
@@ -136,8 +136,7 @@ function ZoneOptionsManager() {
     if (!newLabel.trim()) return;
     setAdding(true);
     try {
-      await api.post('/zone-options', { label: newLabel.trim(), display_order: options.length + 1 });
-      setNewLabel('');
+        await api.post('/zone-options', { name: newLabel.trim(), display_order: options.length + 1 });      setNewLabel('');
       fetchOptions();
     } catch (err) { alert(err.response?.data?.error || 'Failed to add zone'); }
     finally { setAdding(false); }
@@ -145,16 +144,17 @@ function ZoneOptionsManager() {
 
   const toggleActive = async (opt) => {
     try {
-      await api.patch(`/zone-options/${opt.id}`, { is_active: !opt.is_active });
-      fetchOptions();
+        await api.patch(`/zone-options/${opt.id}`, { is_active: !opt.is_active });
+        
+        fetchOptions();
     } catch { alert('Failed to update'); }
   };
 
   const saveEdit = async (id) => {
     if (!editLabel.trim()) return;
     try {
-      await api.patch(`/zone-options/${id}`, { label: editLabel.trim() });
-      setEditingId(null);
+        await api.patch(`/zone-options/${id}`, { name: editLabel.trim() });
+        setEditingId(null);
       fetchOptions();
     } catch { alert('Failed to save'); }
   };
@@ -162,8 +162,9 @@ function ZoneOptionsManager() {
   const deleteOption = async (id, label) => {
     if (!confirm(`Delete "${label}"?`)) return;
     try {
-      await api.delete(`/zone-options/${id}`);
-      fetchOptions();
+        await api.delete(`/zone-options/${id}`);
+        
+        fetchOptions();
     } catch { alert('Failed to delete'); }
   };
 
@@ -216,8 +217,8 @@ function OptionsManager({ options, newLabel, setNewLabel, adding, onAdd, editing
                 onKeyDown={e => e.key === 'Enter' && onSaveEdit(opt.id)}
                 autoFocus />
             ) : (
-              <span className={`flex-1 text-sm ${opt.is_active ? 'text-gray-800' : 'text-gray-400 line-through'}`}>
-                {opt.label}
+                <span className={`flex-1 text-sm ${opt.is_active ? 'text-gray-800' : 'text-gray-400 line-through'}`}>
+                {opt.label || opt.name}
               </span>
             )}
 
@@ -234,7 +235,7 @@ function OptionsManager({ options, newLabel, setNewLabel, adding, onAdd, editing
                     {opt.is_active ? 'Active' : 'Hidden'}
                   </button>
                   <button onClick={() => onEdit(opt)} className="text-xs text-primary hover:underline">Edit</button>
-                  <button onClick={() => onDelete(opt.id, opt.label)} className="text-xs text-red-400 hover:underline">Delete</button>
+                  <button onClick={() => onDelete(opt.id, opt.label || opt.name)} className="text-xs text-red-400 hover:underline">Delete</button>
                 </>
               )}
             </div>

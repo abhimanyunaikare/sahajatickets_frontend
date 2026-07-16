@@ -66,8 +66,8 @@ export default function MyTickets() {
       <SeekerNav account={account} />
       <div className="max-w-2xl mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold text-gray-800">🎟 My Tickets</h1>
-          <Link href="/" className="btn-primary !px-4 !py-2 text-sm">Book Event</Link>
+          <h1 className="text-xl font-bold text-gray-800">🎟 My Coupons</h1>
+          <Link href="/" className="btn-primary !px-4 !py-2 text-sm">Book Coupon</Link>
         </div>
 
         {tickets.length === 0 && (
@@ -139,15 +139,21 @@ function TicketCard({ ticket: tk, onDownload, past }) {
         </div>
       )}
 
-      <div className="flex gap-2 mt-2">
-        <button onClick={() => setShowQR(!showQR)}
-          className="flex-1 text-sm py-2 rounded-xl border border-primary text-primary hover:bg-purple-50 font-medium">
-          {showQR ? 'Hide QR' : '📱 Show QR'}
-        </button>
-        <button onClick={() => onDownload(tk)}
-          className="flex-1 text-sm py-2 rounded-xl bg-primary text-white hover:bg-purple-800 font-medium">
-          ⬇ Download
-        </button>
+    <div className="flex gap-2 mt-2">
+        {!past ? (
+          <>
+            <button onClick={() => setShowQR(!showQR)}
+              className="flex-1 text-sm py-2 rounded-xl border border-primary text-primary hover:bg-purple-50 font-medium">
+              {showQR ? 'Hide QR' : '📱 Show QR'}
+            </button>
+            <button onClick={() => onDownload(tk)}
+              className="flex-1 text-sm py-2 rounded-xl bg-primary text-white hover:bg-purple-800 font-medium">
+              ⬇ Download
+            </button>
+          </>
+        ) : (
+          <p className="text-xs text-gray-400 text-center w-full py-1">Past programme — QR no longer valid</p>
+        )}
       </div>
     </div>
   );

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { seekerApi, getSeekerToken, getSeekerAccount, setSeekerSession, getSeekerToken as getToken } from '../../lib/api';
 import { SeekerNav } from '../family';
+import ZonePicker from '../../components/ZonePicker';
+import ProfessionPicker from '../../components/ProfessionPicker';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -24,7 +26,11 @@ function getCategory(age) {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [form, setForm] = useState({ name: '', email: '', date_of_birth: '', volunteer_interests: [] });
+  const [form, setForm] = useState({
+    name: '', email: '', date_of_birth: '',
+    sex: 'male', zone_city: '', profession: '',
+    volunteer_interests: []
+  });
   const [stats, setStats] = useState(null);
   const [volunteerOptions, setVolunteerOptions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +55,9 @@ export default function ProfilePage() {
         name: r.data.name || '',
         email: r.data.email || '',
         date_of_birth: r.data.date_of_birth ? r.data.date_of_birth.split('T')[0] : '',
+        sex: r.data.sex || 'male',
+        zone_city: r.data.zone_city || '',
+        profession: r.data.profession || '',
         volunteer_interests: r.data.volunteer_interests || []
       });
     } catch {}
@@ -140,16 +149,23 @@ export default function ProfilePage() {
                 onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
 
-            {/* Email */}
+            {/* Sex */}
             <div>
-              <label className="label">Email <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input className="input" type="email" value={form.email} placeholder="you@example.com"
-                onChange={e => setForm({ ...form, email: e.target.value })} />
+              <label className="label">Sex *</label>
+              <div className="flex gap-2 mt-1">
+                {['male', 'female'].map(s => (
+                  <button key={s} type="button" onClick={() => setForm({ ...form, sex: s })}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all
+                      ${form.sex === s ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-600 hover:border-primary'}`}>
+                    {s === 'male' ? '♂ Male' : '♀ Female'}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Date of Birth */}
             <div>
-              <label className="label">Date of Birth</label>
+              <label className="label">Birthday</label>
               <input className="input" type="date"
                 max={new Date().toISOString().split('T')[0]}
                 value={form.date_of_birth}
@@ -157,19 +173,44 @@ export default function ProfilePage() {
               {age && category && (
                 <div className="flex items-center gap-2 mt-2">
                   <span className={category.color}>{category.label}</span>
-                  <span className="text-xs text-gray-500">Age {age} — auto-updates every year</span>
+                  <span className="text-xs text-gray-500">Age {age} — updates automatically each year</span>
                 </div>
               )}
+            </div>
+
+            {/* Zone / City */}
+            <div>
+              <label className="label">City / Zone</label>
+              <ZonePicker
+                value={form.zone_city}
+                onChange={v => setForm({ ...form, zone_city: v })}
+              />
+            </div>
+
+            {/* Profession */}
+            <div>
+              <label className="label">Profession</label>
+              <ProfessionPicker
+                value={form.profession}
+                onChange={v => setForm({ ...form, profession: v })}
+              />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="label">Email <span className="text-gray-400 font-normal">(optional)</span></label>
+              <input className="input" type="email" value={form.email} placeholder="you@example.com"
+                onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
           </div>
         </div>
 
-        {/* Volunteer Interests — separate card */}
+        {/* Volunteer Interests */}
         {volunteerOptions.length > 0 && (
           <div className="card mb-5">
             <h3 className="font-semibold text-gray-800 mb-1">🙌 Seva Interests</h3>
             <p className="text-xs text-gray-500 mb-4">
-              Select your areas of interest for volunteering at events. This is saved to your profile and shared with organisers.
+              Select your areas of interest. Saved to your profile and visible to organisers.
             </p>
             <div className="flex flex-wrap gap-2">
               {volunteerOptions.map(opt => {
@@ -177,9 +218,7 @@ export default function ProfilePage() {
                 return (
                   <button key={opt.id} type="button" onClick={() => toggleInterest(opt.label)}
                     className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all
-                      ${selected
-                        ? 'bg-primary text-white border-primary'
-                        : 'border-gray-200 text-gray-600 hover:border-primary bg-white'}`}>
+                      ${selected ? 'bg-primary text-white border-primary' : 'border-gray-200 text-gray-600 hover:border-primary bg-white'}`}>
                     {selected ? '✓ ' : ''}{opt.label}
                   </button>
                 );
@@ -194,7 +233,7 @@ export default function ProfilePage() {
         )}
 
         {error && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2 mb-4">{error}</p>}
-        {success && <p className="text-green-600 text-sm bg-green-50 rounded-xl px-3 py-2 mb-4">✓ Profile updated successfully!</p>}
+        {success && <p className="text-green-600 text-sm bg-green-50 rounded-xl px-3 py-2 mb-4">✓ Profile updated!</p>}
 
         <button onClick={save} disabled={saving} className="btn-primary w-full py-3">
           {saving ? 'Saving…' : 'Save Profile'}

@@ -20,18 +20,33 @@ export default function Home() {
     <>
       <Navbar />
       {/* Hero */}
-      <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-purple-600 text-white py-16 px-4 text-center">
-        <div className="text-4xl mb-3">🪷</div>
-        <h1 className="text-3xl font-bold mb-2">Sahaja Yoga Events</h1>
-        <p className="text-purple-200 text-lg">Register for pujas, workshops & programmes</p>
-        <p className="mt-4 text-xl font-medium text-yellow-300">Jai Shri Mataji 🙏</p>
+      <div className="bg-gradient-to-br from-purple-900 via-purple-800 to-purple-600 text-white">
+        {/* Shri Mataji Photo */}
+        <div className="flex justify-center pt-8 pb-2">
+          <div className="relative">
+            <div className="absolute inset-0 rounded-full bg-yellow-300/20 blur-xl scale-110" />
+            <img
+              src="/shrimataji.webp"
+              alt="H. H. Shri Mataji Nirmala Devi"
+              className="relative w-40 h-40 sm:w-52 sm:h-52 object-cover object-top rounded-full border-4 border-yellow-300/60 shadow-2xl"
+            />
+          </div>
+        </div>
+        <div className="text-center px-4 pb-10 pt-4">
+          <p className="text-yellow-200 text-xs font-medium tracking-widest uppercase mb-2">
+            H. H. Shri Mataji Nirmala Devi
+          </p>
+          <h1 className="text-3xl font-bold mb-2">Sahaja Yoga Programs</h1>
+          <p className="text-purple-200 text-lg">Registration for pujas, workshops & seminars</p>
+          <p className="mt-3 text-lg font-medium text-yellow-300">Jai Shri Mataji 🙏</p>
+        </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-10">
-        <h2 className="text-xl font-semibold text-gray-700 mb-6">Upcoming Events</h2>
+        <h2 className="text-xl font-semibold text-gray-700 mb-6">Upcoming programs</h2>
 
         {loading && (
-          <div className="text-center text-gray-400 py-16">Loading events…</div>
+          <div className="text-center text-gray-400 py-16">Loading programs…</div>
         )}
 
         {!loading && events.length === 0 && (
@@ -50,6 +65,17 @@ export default function Home() {
       </div>
     </>
   );
+}
+
+
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':');
+  const hour = parseInt(h);
+  const min = m || '00';
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${min} ${ampm}`;
 }
 
 function EventCard({ event }) {
@@ -78,11 +104,18 @@ function EventCard({ event }) {
           <h3 className="font-semibold text-gray-900 group-hover:text-primary text-lg leading-tight">
             {event.title}
           </h3>
-          <span className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-full ${event.is_free ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-primary'}`}>
-            {event.is_free ? 'FREE' : `₹${minPrice}+`}
-          </span>
+          {event.is_free && (
+            <span className="shrink-0 text-xs font-semibold px-2 py-1 rounded-full bg-green-100 text-green-700">
+              FREE
+            </span>
+          )}
         </div>
         <p className="text-sm text-gray-500 mt-2">📅 {dateStr}</p>
+        {event.start_time && (
+          <p className="text-sm text-gray-500 mt-0.5">
+            🕐 {formatTime(event.start_time)}
+          </p>
+        )}
         <p className="text-sm text-gray-500 mt-1">📍 {event.venue}{event.city ? `, ${event.city}` : ''}</p>
         {multiDay && (
           <span className="inline-block mt-3 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-0.5">
@@ -90,7 +123,7 @@ function EventCard({ event }) {
           </span>
         )}
         <div className="mt-4 text-sm font-medium text-primary group-hover:underline">
-          View & Register →
+        Get Coupon →
         </div>
       </div>
     </Link>

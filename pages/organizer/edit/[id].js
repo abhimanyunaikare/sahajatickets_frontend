@@ -16,7 +16,13 @@ export default function EditEvent() {
 
   useEffect(() => {
     const token = localStorage.getItem('sy_token');
+    const u = localStorage.getItem('sy_user');
     if (!token) { router.push('/organizer/login'); return; }
+    const parsed = JSON.parse(u || '{}');
+    if (!['organizer', 'admin'].includes(parsed.role)) {
+      router.push('/organizer/dashboard');
+      return;
+    }
     if (!id) return;
     api.get(`/events/${id}`).then(r => {
       const ev = r.data;

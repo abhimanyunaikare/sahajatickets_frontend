@@ -50,6 +50,7 @@ export default function Register() {
           <div>
             <label className="label">Role</label>
             <select className="input" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+              <option value="admin">Admin (super access)</option>
               <option value="organizer">Organizer (full access)</option>
               <option value="checkin_seva">Check-in Seva</option>
               <option value="registration_seva">Registration Seva</option>

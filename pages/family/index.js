@@ -3,9 +3,10 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { seekerApi, getSeekerToken, getSeekerAccount } from '../../lib/api';
 import ZonePicker from '../../components/ZonePicker';
+import ProfessionPicker from '../../components/ProfessionPicker';
 
 const RELATIONS = ['Self', 'Spouse', 'Son', 'Daughter', 'Parent', 'Sibling', 'Other'];
-const EMPTY = { name: '', age: '', date_of_birth: '', sex: 'male', relation: 'Self', zone_city: '', email: '', phone: '', volunteer_interests: [] };
+const EMPTY = { name: '', age: '', date_of_birth: '', sex: 'male', relation: 'Self', zone_city: '', email: '', phone: '', volunteer_interests: [], profession: '' };
 
 function calculateAge(dob) {
   if (!dob) return null;
@@ -145,7 +146,8 @@ function MemberForm({ initial, onSave, onCancel }) {
     const [form, setForm] = useState({
       ...initial,
       date_of_birth: initial.date_of_birth ? initial.date_of_birth.split('T')[0] : '',
-      volunteer_interests: initial.volunteer_interests || []
+      volunteer_interests: initial.volunteer_interests || [],
+      profession: initial.profession || ''
     });
     const [saving, setSaving] = useState(false);
     const [volunteerOptions, setVolunteerOptions] = useState([]);
@@ -190,7 +192,7 @@ function MemberForm({ initial, onSave, onCancel }) {
   
           {/* Date of Birth */}
           <div>
-            <label className="label">Date of Birth *</label>
+            <label className="label">Birthday *</label>
             <input className="input" type="date"
               max={new Date().toISOString().split('T')[0]}
               value={form.date_of_birth}
@@ -237,10 +239,17 @@ function MemberForm({ initial, onSave, onCancel }) {
           <div>
             <label className="label">Phone <span className="text-gray-400 font-normal">(optional)</span></label>
             <input className="input" type="tel" value={form.phone}
-              onChange={e => set('phone', e.target.value)}
-              placeholder="10-digit number" />
+            onChange={e => set('phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+            placeholder="10-digit number"
+            maxLength={10}
+            inputMode="numeric" />
           </div>
   
+          <div>
+            <label className="label">Profession</label>
+            <ProfessionPicker value={form.profession} onChange={v => set('profession', v)} />
+          </div>
+          
           <div>
             <label className="label">Email <span className="text-gray-400 font-normal">(optional)</span></label>
             <input className="input" type="email" value={form.email}
@@ -294,7 +303,7 @@ export function SeekerNav({ account }) {
       <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <span className="text-2xl">🪷</span>
-          <span className="font-bold text-primary text-lg">SY Events</span>
+          <span className="font-bold text-primary text-lg">SY Programs</span>
         </Link>
         <div className="flex items-center gap-3">
         <Link href="/my-tickets" className="text-sm text-gray-500 hover:text-primary">🎟 My Tickets</Link>

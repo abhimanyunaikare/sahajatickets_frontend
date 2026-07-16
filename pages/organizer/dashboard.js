@@ -3,6 +3,58 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import api from '../../lib/api';
 
+function MobileMenu({ user, logout }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)}
+        className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">
+        ☰
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-10 bg-white border border-gray-200 rounded-xl shadow-xl p-2 w-52 z-50">
+            {(['organizer', 'accounts', 'admin'].includes(user?.role)) && (
+              <Link href="/accounts" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-purple-50 rounded-lg">
+                📊 Accounts
+              </Link>
+            )}
+            {(['organizer', 'admin'].includes(user?.role)) && (<>
+              <Link href="/organizer/users" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-purple-50 rounded-lg">
+                👥 Users
+              </Link>
+              <Link href="/organizer/settings" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-purple-50 rounded-lg">
+                ⚙️ Settings
+              </Link>
+              {user?.role === 'admin' && (
+                <Link href="/organizer/volunteer-directory" onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-purple-50 rounded-lg">
+                  🙌 Volunteers
+                </Link>
+              )}
+            </>)}
+            {(['organizer', 'admin', 'checkin_seva'].includes(user?.role)) && (
+              <Link href="/checkin" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-purple-50 rounded-lg">
+                📷 Check-in
+              </Link>
+            )}
+            <hr className="my-1 border-gray-100" />
+            <button onClick={() => { setOpen(false); logout(); }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 rounded-lg">
+              Sign out
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -14,13 +66,16 @@ export default function Dashboard() {
     const token = localStorage.getItem('sy_token');
     const u = localStorage.getItem('sy_user');
     if (!token) { router.push('/organizer/login'); return; }
-    setUser(JSON.parse(u));
-    fetchEvents();
+    const parsed = JSON.parse(u);
+    setUser(parsed);
+    fetchEvents(parsed);
   }, []);
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (currentUser) => {
     try {
-      const r = await api.get('/events/my/all');
+      const u = currentUser || user;
+      const endpoint = u?.role === 'organizer' ? '/events/my/all' : '/events';
+      const r = await api.get(endpoint);
       setEvents(r.data);
     } catch (err) {
       console.error('Failed to fetch events:', err);
@@ -44,40 +99,30 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top bar */}
-      <div className="bg-white border-b border-gray-100 px-4 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🪷</span>
-          <span className="font-bold text-primary">SY Events</span>
-          <span className="text-gray-300 mx-2">|</span>
-          <span className="text-sm text-gray-600">{user?.name}</span>
-          <span className="text-xs bg-purple-100 text-primary px-2 py-0.5 rounded-full ml-1">{user?.role}</span>
+      <div className="bg-white border-b border-gray-100 px-4 py-3 shadow-sm sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🪷</span>
+            <div>
+              <span className="font-bold text-primary text-sm">SY Programs</span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">{user?.name}</span>
+                <span className="text-xs bg-purple-100 text-primary px-1.5 py-0.5 rounded-full">{user?.role}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <MobileMenu user={user} logout={logout} />
+          </div>
         </div>
-        {(user?.role === 'organizer' || user?.role === 'accounts') && (
-            <Link href="/accounts" className="text-sm text-gray-500 hover:text-primary font-medium">
-              📊 Accounts
-            </Link>
-          )}
-          {user?.role === 'organizer' && (
-            <Link href="/organizer/users" className="text-sm text-gray-500 hover:text-primary font-medium">
-              👥 Users
-            </Link>
-          )}
-          {user?.role === 'organizer' && (
-            <Link href="/organizer/settings" className="text-sm text-gray-500 hover:text-primary font-medium">
-              ⚙️ Settings
-            </Link>
-          )}
-          <Link href="/organizer/change-password" className="text-sm text-gray-400 hover:text-gray-700">🔑 Password</Link>
-        <button onClick={logout} className="text-sm text-gray-400 hover:text-gray-700 ml-2">Sign out</button>
-        
-        </div>
+      </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
   <h1 className="text-xl font-bold text-gray-800">My Events</h1>
   <div className="flex items-center gap-3">
-    {user?.role === 'organizer' && (
-      <button onClick={() => setShowCreate(true)} className="btn-primary !px-5 !py-2 text-sm">
+    {(['organizer', 'admin'].includes(user?.role)) && (
+            <button onClick={() => setShowCreate(true)} className="btn-primary !px-5 !py-2 text-sm">
         + Create Event
       </button>
     )}
@@ -95,8 +140,14 @@ export default function Dashboard() {
         {events.length === 0 && !showCreate && (
           <div className="card text-center py-16">
             <div className="text-5xl mb-4">📋</div>
-            <p className="text-gray-500 mb-4">No events yet</p>
-            <button onClick={() => setShowCreate(true)} className="btn-primary">Create your first event</button>
+            {(['organizer', 'admin'].includes(user?.role)) ? (
+              <>
+                <p className="text-gray-500 mb-4">No programmes yet</p>
+                <button onClick={() => setShowCreate(true)} className="btn-primary">Create your first programme</button>
+              </>
+            ) : (
+              <p className="text-gray-500">No active programmes at the moment.</p>
+            )}
           </div>
         )}
 
@@ -111,33 +162,57 @@ export default function Dashboard() {
               <p className="text-sm text-gray-500 mb-4">📍 {ev.venue}{ev.city ? `, ${ev.city}` : ''}</p>
 
               <div className="flex gap-2 flex-wrap">
-                <Link href={`/organizer/event/${ev.id}`}
-                  className="text-sm px-3 py-1.5 bg-purple-50 text-primary rounded-lg hover:bg-purple-100 font-medium">
-                  Dashboard
-                </Link>
-                <Link href={`/organizer/edit/${ev.id}`}
-                  className="text-sm px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 font-medium">
-                  ✏️ Edit
-                </Link>
-                <Link href={`/checkin?event_id=${ev.id}`}
-                  className="text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 font-medium">
-                  📷 Check-in
-                </Link>
-                <Link href={`/events/${ev.id}`} target="_blank"
-                  className="text-sm px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-medium">
-                  View Page ↗
-                </Link>
-                {user?.role === 'organizer' && (
-                  <button onClick={() => toggleStatus(ev.id, ev.status)}
-                    className={`text-sm px-3 py-1.5 rounded-lg font-medium ${
-                      ev.status === 'published'
-                        ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                        : 'bg-green-50 text-green-600 hover:bg-green-100'
-                    }`}>
-                    {ev.status === 'published' ? 'Close registrations' : 'Publish'}
-                  </button>
+                {/* Check-in button — not for accounts */}
+                {(['organizer', 'admin', 'checkin_seva'].includes(user?.role)) && (
+                  <Link href={`/checkin?event_id=${ev.id}`}
+                    className="text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 font-medium">
+                    📷 Check-in
+                  </Link>
+                )}
+
+                {/* Dashboard — not for checkin_seva or accounts */}
+                {(['organizer', 'admin', 'registration_seva'].includes(user?.role)) && (
+                  <Link href={`/organizer/event/${ev.id}`}
+                    className="text-sm px-3 py-1.5 bg-purple-50 text-primary rounded-lg hover:bg-purple-100 font-medium">
+                    Dashboard
+                  </Link>
+                )}
+
+                {/* View page — organizer, admin, accounts, registration_seva */}
+                {(['organizer', 'admin', 'registration_seva', 'accounts'].includes(user?.role)) && (
+                  <Link href={`/events/${ev.id}`} target="_blank"
+                    className="text-sm px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-medium">
+                    View ↗
+                  </Link>
+                )}
+
+                {/* Accounts — only sees accounts link */}
+                {user?.role === 'accounts' && (
+                  <Link href={`/accounts/event/${ev.id}`}
+                    className="text-sm px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 font-medium">
+                    📊 Accounts
+                  </Link>
+                )}
+
+                {/* Edit + Publish — organizer and admin only */}
+                {(['organizer', 'admin'].includes(user?.role)) && (
+                  <>
+                    <Link href={`/organizer/edit/${ev.id}`}
+                      className="text-sm px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 font-medium">
+                      ✏️ Edit
+                    </Link>
+                    <button onClick={() => toggleStatus(ev.id, ev.status)}
+                      className={`text-sm px-3 py-1.5 rounded-lg font-medium ${
+                        ev.status === 'published'
+                          ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                          : 'bg-green-50 text-green-600 hover:bg-green-100'
+                      }`}>
+                      {ev.status === 'published' ? 'Close' : 'Publish'}
+                    </button>
+                  </>
                 )}
               </div>
+
             </div>
           ))}
         </div>
@@ -156,12 +231,12 @@ function StatusBadge({ status }) {
 }
 
 function CreateEventModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({
+const [form, setForm] = useState({
     title: '', description: '', venue: '', city: '', state: '',
     start_date: '', end_date: '', start_time: '', total_capacity: 200,
     is_free: false,
     donation_enabled: true,
-    sex_based_pricing: true,
+    sex_based_pricing: false, // default: same price for all
     child_price: 0, child_male_price: 0, child_female_price: 0, child_max_age: 12,
     yuva_price: 100, yuva_male_price: 100, yuva_female_price: 100, yuva_max_age: 25,
     adult_price: 200, adult_male_price: 200, adult_female_price: 200,

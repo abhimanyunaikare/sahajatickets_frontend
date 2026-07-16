@@ -19,7 +19,7 @@ export default function AccountsDashboard() {
     const u = localStorage.getItem('sy_user');
     if (!token) { router.push('/organizer/login'); return; }
     const parsed = JSON.parse(u);
-    if (!['organizer','accounts'].includes(parsed.role)) {
+    if (!['organizer', 'accounts', 'admin'].includes(parsed.role)) {
       router.push('/organizer/dashboard'); return;
     }
     setUser(parsed);

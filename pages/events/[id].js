@@ -15,12 +15,13 @@ function getCategory(age, tier) {
   return 'adult';
 }
 
-function getPrice(seeker, tier) {
+function getPrice(seeker, tier, overrideCat) {
   if (!tier || tier.is_free) return 0;
-  const cat = getCategory(seeker.age, tier);
+  const cat = overrideCat || getCategory(seeker.age, tier);
   if (!cat) return 0;
   const sex = seeker.sex === 'female' ? 'female' : 'male';
-  return parseFloat(tier[`${cat}_${sex}_price`]) || 0;
+  const price = parseFloat(tier[`${cat}_${sex}_price`]) || 0;
+  return price;
 }
 
 export default function EventPage() {
@@ -44,58 +45,57 @@ export default function EventPage() {
 
   useEffect(() => {
     if (!id) return;
-    // Redirect to login if not logged in
-    if (!getSeekerToken()) {
-      router.push(`/login?next=/events/${id}`);
-      return;
-    }
+    
     const acct = getSeekerAccount();
     setSeekerAccount(acct);
+    const isLoggedIn = !!getSeekerToken();
 
-    // Load event, family members and volunteer options in parallel
-    Promise.all([
-      api.get(`/events/${id}`),
-      seekerApi.get('/family'),
-      api.get('/volunteer-options'),
-      seekerApi.get('/seeker-auth/profile')
-    ]).then(([evRes, famRes, volRes, profileRes]) => {
-      setEvent(evRes.data);
-      // setVolunteerOptions(volRes.data);
-
-      const profile = profileRes.data;
-
-      // Build the self member from profile
-      const selfMember = {
-        id: `self_${acct?.id}`,
-        _is_self: true,
-        name: profile.name || acct?.name || '',
-        age: profile.age || null,
-        current_age: profile.age || null,
-        date_of_birth: profile.date_of_birth || null,
-        sex: profile.sex || 'male',
-        relation: 'self',
-        zone_city: profile.zone_city || '',
-        email: profile.email || '',
-        phone: profile.phone || acct?.phone || '',
-        volunteer_interests: profile.volunteer_interests || []
-      };
-
-      // Put self first, then family members
-      setFamilyMembers([selfMember, ...famRes.data]);
-
-      // Auto-select self by default
-      setSeekers([{
-        name: selfMember.name,
-        age: selfMember.current_age?.toString() || '',
-        sex: selfMember.sex || 'male',
-        zone_city: selfMember.zone_city || '',
-        email: selfMember.email || '',
-        phone: selfMember.phone || '',
-        is_first_time: false,
-        _family_id: selfMember.id,
-        volunteer_interests: selfMember.volunteer_interests || []
-      }]);
-    }).finally(() => setLoading(false));
+    if (isLoggedIn) {
+      // Logged in — load event + family + profile
+      Promise.all([
+        api.get(`/events/${id}`),
+        seekerApi.get('/family'),
+        api.get('/volunteer-options'),
+        seekerApi.get('/seeker-auth/profile')
+      ]).then(([evRes, famRes, volRes, profileRes]) => {
+        setEvent(evRes.data);
+        const profile = profileRes.data;
+        const selfMember = {
+          id: `self_${acct?.id}`,
+          _is_self: true,
+          name: profile.name || acct?.name || '',
+          age: profile.age || null,
+          current_age: profile.age || null,
+          date_of_birth: profile.date_of_birth || null,
+          sex: profile.sex || 'male',
+          relation: 'self',
+          zone_city: profile.zone_city || '',
+          email: profile.email || '',
+          phone: profile.phone || acct?.phone || '',
+          volunteer_interests: profile.volunteer_interests || []
+        };
+        setFamilyMembers([selfMember, ...famRes.data]);
+        setSeekers([{
+          name: selfMember.name,
+          age: selfMember.current_age?.toString() || '',
+          sex: selfMember.sex || 'male',
+          zone_city: selfMember.zone_city || '',
+          email: selfMember.email || '',
+          phone: selfMember.phone || '',
+          _family_id: selfMember.id,
+          volunteer_interests: selfMember.volunteer_interests || []
+        }]);
+      }).finally(() => setLoading(false));
+    } else {
+      // Guest — load event only, show manual entry form
+      Promise.all([
+        api.get(`/events/${id}`),
+        api.get('/volunteer-options')
+      ]).then(([evRes, volRes]) => {
+        setEvent(evRes.data);
+        setSeekers([{ ...EMPTY_SEEKER, _uid: 'guest_0' }]);
+      }).finally(() => setLoading(false));
+    }
   }, [id]);
 
   useEffect(() => {
@@ -122,7 +122,10 @@ export default function EventPage() {
   
   const removeSeeker = (i) => setSeekers(seekers.filter((_, idx) => idx !== i));
 
-  const baseTotal = seekers.reduce((sum, s) => sum + getPrice(s, tier), 0);
+  const baseTotal = seekers.reduce((sum, s, i) => {
+    const override = categoryOverrides[i];
+    return sum + getPrice(s, tier, override);
+  }, 0);
   const discountAmt = discountResult?.valid ? (discountResult.discountAmount || 0) : 0;
   const ticketTotal = Math.max(0, baseTotal - discountAmt);
 
@@ -178,12 +181,18 @@ export default function EventPage() {
         key: key_id,
         amount: orderRes.data.amount,
         currency: 'INR',
-        name: 'Sahaja Yoga Events',
+        name: 'Sahaja Yoga Programs',
         description: event.title,
         order_id,
         theme: { color: '#6B21A8' },
         prefill: { name: seekers[0].name, email: seekers[0].email, contact: seekers[0].phone },
-        modal: { ondismiss: () => setSubmitting(false) },
+        modal: { 
+          ondismiss: () => {
+            setSubmitting(false);
+          },
+          confirm_close: false
+        },
+        
         handler: async (response) => {
           try {
             const verifyRes = await api.post('/tickets/verify', { ...response, booking_group_id });
@@ -205,11 +214,7 @@ export default function EventPage() {
 
   const handleNextFromForm = () => {
     if (!validate()) return;
-    if (event.donation_enabled === false) {
-      handleSubmit(0); // skip donation step entirely, go straight to payment
-    } else {
-      setStep('donation');
-    }
+    handleSubmit(0); // skip donation for now
   };
 
   if (loading) return <><Navbar /><div className="text-center py-20 text-gray-400">Loading…</div></>;
@@ -264,25 +269,49 @@ export default function EventPage() {
               ? `${start.toLocaleDateString('en-IN', { day:'numeric', month:'short' })} – ${end.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}`
               : start.toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' })}
           </p>
-          {event.start_time && <p className="text-gray-500 text-sm mb-1">🕐 {event.start_time}</p>}
-          <p className="text-gray-500 text-sm mb-3">📍 {event.venue}{event.city ? `, ${event.city}` : ''}</p>
+          {event.start_time && <p className="text-gray-500 text-sm mb-1">🕐 {formatTime(event.start_time)}</p>}          <p className="text-gray-500 text-sm mb-3">📍 {event.venue}{event.city ? `, ${event.city}` : ''}</p>
           {event.description && <p className="text-gray-700 text-sm leading-relaxed">{event.description}</p>}
         </div>
 
         {step === 'form' && (
           <>
+          {/* Guest banner */}
+            {!seekerAccount && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-amber-800">Booking as guest</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Login to use saved family members & view past coupons</p>
+                </div>
+                <a href={`/login?next=/events/${id}`}
+                  className="text-xs bg-primary text-white px-3 py-1.5 rounded-lg font-medium whitespace-nowrap shrink-0">
+                  Login
+                </a>
+              </div>
+            )}
+
             {!tier.is_free && (
               <div className="card mb-6 bg-purple-50 border-purple-100">
-                <h3 className="font-semibold text-gray-700 mb-3 text-sm">Ticket Pricing</h3>
+                <h3 className="font-semibold text-gray-700 mb-3 text-sm">Coupon Pricing</h3>
                 <div className="grid grid-cols-3 gap-2 text-xs text-center">
-                  {[['child','Child',tier.child_max_age],['yuva','Yuva',tier.yuva_max_age],['adult','Adult','26+']].map(([key,label,maxAge]) => (
-                    <div key={key} className="bg-white rounded-xl p-3 border border-purple-100">
-                      <div className="font-medium text-gray-700">{label}</div>
-                      <div className="text-gray-400 text-[10px] mb-2">{key === 'adult' ? 'Age 26+' : `Up to ${maxAge} yrs`}</div>
-                      <div className="text-primary font-semibold">♂ ₹{tier[`${key}_male_price`]}</div>
-                      <div className="text-purple-400 font-semibold">♀ ₹{tier[`${key}_female_price`]}</div>
-                    </div>
-                  ))}
+                {[['child','Child',tier.child_max_age],['yuva','Yuva',tier.yuva_max_age],['adult','Adult','26+']].map(([key,label,maxAge]) => {
+                    const malePrice = tier[`${key}_male_price`];
+                    const femalePrice = tier[`${key}_female_price`];
+                    const samePrice = parseFloat(malePrice) === parseFloat(femalePrice);
+                    return (
+                      <div key={key} className="bg-white rounded-xl p-3 border border-purple-100">
+                        <div className="font-medium text-gray-700">{label}</div>
+                        <div className="text-gray-400 text-[10px] mb-2">{key === 'adult' ? 'Age 26+' : `Up to ${maxAge} yrs`}</div>
+                        {samePrice ? (
+                          <div className="text-primary font-bold text-sm">₹{malePrice}</div>
+                        ) : (
+                          <>
+                            <div className="text-primary font-semibold">♂ ₹{malePrice}</div>
+                            <div className="text-purple-400 font-semibold">♀ ₹{femalePrice}</div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -316,8 +345,9 @@ export default function EventPage() {
                     setCategoryOverrides={setCategoryOverrides}
                     onUpdate={(field, val) => updateSeeker(realIndex, field, val)}
                     onRemove={() => removeSeeker(realIndex)}
-                    showRemove={seekers.filter(sk => !sk._family_id).length > 1}
-                  />
+                    showRemove={true}
+                    
+                    />
                 );
               })}
             </div>
@@ -326,7 +356,7 @@ export default function EventPage() {
             {seekers.filter(s => !s._family_id).length > 0 && (
               <button onClick={addSeeker}
                 className="w-full py-3 border-2 border-dashed border-purple-300 text-primary rounded-xl text-sm font-medium hover:bg-purple-50 mb-6">
-                {t.addSeeker}
+                + Add Member Not in Your List
               </button>
             )}
 
@@ -358,7 +388,14 @@ export default function EventPage() {
                       <span className="text-xs text-amber-500 ml-1">({categoryOverrides[i]})</span>
                     )}
                   </span>
-                  <span>{tier.is_free ? t.free : `₹${getPrice({...s, age_category: categoryOverrides[i]}, tier)}`}</span>
+                  <span>
+                    {tier.is_free
+                      ? t.free
+                      : getPrice(s, tier, categoryOverrides[i]) === 0
+                        ? <span className="text-green-600">FREE</span>
+                        : `₹${getPrice(s, tier, categoryOverrides[i])}`
+                    }
+                  </span>
                 </div>
               ) : null)}
               {discountAmt > 0 && (
@@ -367,13 +404,21 @@ export default function EventPage() {
                 </div>
               )}
               <div className="flex justify-between font-bold text-base pt-3 text-gray-900">
-                <span>Ticket Total</span>
+                <span>Coupon Total</span>
                 <span>{tier.is_free || ticketTotal === 0 ? <span className="text-green-600">{t.free}</span> : `₹${ticketTotal}`}</span>
               </div>
             </div>
 
-            <button onClick={handleNextFromForm} className="btn-primary w-full text-base py-4">
-              Next — Add Dana →
+            <button onClick={handleNextFromForm} disabled={submitting} className="btn-primary w-full text-base py-4">
+              {submitting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Processing…
+                </span>
+              ) : 'Get Coupon →'}
             </button>
           </>
         )}
@@ -432,11 +477,9 @@ function ManualSeekerForm({ seeker: s, index: i, errors, t, tier, categoryOverri
   return (
     <div className="card border-2 border-purple-100">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-700">Add new seeker</h3>
-        {showRemove && (
-          <button type="button" onClick={onRemove}
-            className="text-red-400 text-sm hover:text-red-600">Remove</button>
-        )}
+        <h3 className="font-semibold text-gray-700">Add new member</h3>
+        <button type="button" onClick={onRemove}
+          className="text-red-400 text-sm hover:text-red-600">✕ Remove</button>
       </div>
       <div className="space-y-4">
 
@@ -483,7 +526,7 @@ function ManualSeekerForm({ seeker: s, index: i, errors, t, tier, categoryOverri
         {/* Ticket category — card style */}
         {s.age && getLocalCategory(s.age, tier) && (
           <div>
-            <label className="label">Ticket Category</label>
+            <label className="label">Coupon Category</label>
             {currentCat !== getLocalCategory(s.age, tier) && (
               <p className="text-xs text-amber-600 mb-1.5">
                 ⚡ Changed from default ({getLocalCategory(s.age, tier)})
@@ -549,8 +592,10 @@ function ManualSeekerForm({ seeker: s, index: i, errors, t, tier, categoryOverri
               className={`input rounded-l-none ${errors[`${i}_phone`] ? 'border-red-400' : ''}`}
               type="tel"
               value={s.phone}
-              onChange={e => onUpdate('phone', e.target.value)}
+              onChange={e => onUpdate('phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
               placeholder="10-digit number"
+              maxLength={10}
+              inputMode="numeric"
             />
           </div>
           {errors[`${i}_phone`] && <p className="text-red-500 text-xs mt-1">{errors[`${i}_phone`]}</p>}
@@ -563,7 +608,13 @@ function ManualSeekerForm({ seeker: s, index: i, errors, t, tier, categoryOverri
               {currentCat} · {s.sex === 'female' ? '♀ Female' : '♂ Male'}
             </span>
             <span className="font-bold text-primary">
-              {tier?.is_free ? 'FREE' : `₹${getPrice(currentCat, s.sex, tier)}`}
+              {tier?.is_free
+                ? 'FREE'
+                : (() => {
+                    const p = parseFloat(tier?.[`${currentCat}_${s.sex === 'female' ? 'female' : 'male'}_price`] || 0);
+                    return p === 0 ? <span className="text-green-600">FREE</span> : `₹${p}`;
+                  })()
+              }
             </span>
           </div>
         )}
@@ -741,9 +792,6 @@ function TicketCategoryPicker({ age, tier, sex, value, onChange }) {
 function DonationStep({ t, ticketTotal, isFree, submitting, onPay }) {
   const [amount, setAmount] = useState(101);
   const [custom, setCustom] = useState('');
-  const [isAnon, setIsAnon] = useState(false);
-  const [dedication, setDedication] = useState('');
-  const [showDedicate, setShowDedicate] = useState(false);
   const PRESETS = [51, 101, 251, 501];
   const donationAmt = custom ? parseInt(custom) || 0 : amount;
   const grandTotal = ticketTotal + donationAmt;
@@ -756,7 +804,6 @@ function DonationStep({ t, ticketTotal, isFree, submitting, onPay }) {
           <h2 className="text-xl font-bold text-gray-800">{t.donate}</h2>
           <p className="text-gray-500 text-sm mt-1">{t.donateSubtitle}</p>
         </div>
-
         <div className="grid grid-cols-4 gap-2 mb-4">
           {PRESETS.map(p => (
             <button key={p} onClick={() => { setAmount(p); setCustom(''); }}
@@ -766,38 +813,21 @@ function DonationStep({ t, ticketTotal, isFree, submitting, onPay }) {
             </button>
           ))}
         </div>
-
         <div className="flex items-center gap-2 mb-4">
           <span className="text-gray-400 text-lg">₹</span>
           <input className="input" type="number" min="1" placeholder="Any other amount"
             value={custom} onChange={e => { setCustom(e.target.value); setAmount(0); }} />
         </div>
-
-        <label className="flex items-center gap-2 cursor-pointer mb-4">
-          <input type="checkbox" className="w-4 h-4 accent-purple-600"
-            checked={isAnon} onChange={e => setIsAnon(e.target.checked)} />
-          <span className="text-sm text-gray-600">{t.anonymous}</span>
-        </label>
-
-        {!showDedicate ? (
-          <button onClick={() => setShowDedicate(true)}
-            className="w-full border border-dashed border-gray-300 rounded-xl py-2.5 text-sm text-gray-500 hover:bg-gray-50 mb-2">
-            🪷 {t.dedicate}
-          </button>
-        ) : (
-          <input className="input mb-2" placeholder="e.g. In memory of my mother..."
-            value={dedication} onChange={e => setDedication(e.target.value)} />
-        )}
       </div>
 
       <div className="card bg-purple-50 border-purple-100">
         <div className="flex justify-between text-sm text-gray-600 mb-2">
-          <span>Ticket amount</span>
+          <span>Coupon amount</span>
           <span>{isFree ? 'FREE' : `₹${ticketTotal}`}</span>
         </div>
         {donationAmt > 0 && (
           <div className="flex justify-between text-sm text-gray-600 mb-2">
-            <span>Dana (donation) 🪷</span>
+            <span>Donation 🪷</span>
             <span>₹{donationAmt}</span>
           </div>
         )}
@@ -807,23 +837,13 @@ function DonationStep({ t, ticketTotal, isFree, submitting, onPay }) {
         </div>
       </div>
 
-      <div className="space-y-3"> {/* Dono buttons ke beech spacing manage karne ke liye wrappers */}
-        <button 
-          onClick={() => onPay(donationAmt)} 
-          disabled={submitting}
-          className="btn-primary w-full py-4 text-base"
-        >
-          {submitting ? 'Processing…' : (isFree && donationAmt === 0 ? '✓ Confirm Registration' : `Pay ₹${isFree ? donationAmt : grandTotal} →`)}
-        </button>
-        
-        <button 
-          onClick={() => onPay(0)} 
-          disabled={submitting}
-          className="w-full text-center text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100 rounded-xl py-3.5 transition-all shadow-sm block"
-        >
-          {t.skip} — Pay ₹{ticketTotal} only
-        </button>
-      </div>
+      <button onClick={() => onPay(donationAmt)} disabled={submitting} className="btn-primary w-full py-4 text-base">
+        {submitting ? 'Processing…' : `Pay ₹${isFree ? donationAmt : grandTotal} →`}
+      </button>
+      <button onClick={() => onPay(0)} disabled={submitting}
+        className="w-full text-center text-sm text-gray-500 hover:text-gray-700 py-2">
+        {t.skip}
+      </button>
     </div>
   );
 }
@@ -845,7 +865,7 @@ function SuccessStep({ tickets, t, event }) {
   const downloadTicket = (tk) => {
     const qrImg = new Image();
     qrImg.crossOrigin = 'anonymous';
-    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify({ uuid: tk.qr_uuid, platform: 'sy-events' }))}`;
+    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify({ uuid: tk.qr_uuid, platform: 'sy-events', venue: event.venue, city: event.city }))}`;
 
     qrImg.onload = () => {
       const canvas = document.createElement('canvas');
@@ -883,17 +903,33 @@ function SuccessStep({ tickets, t, event }) {
       const catLabel = capitalize(tk.age_category);
       ctx.fillText(`${catLabel} · ${sexLabel}`, 200, 412);
 
-      // Event name
+     // Event name
       ctx.fillStyle = '#555555';
       ctx.font = '13px Arial';
-      wrapTextCenter(ctx, event.title, 200, 440, 340, 18);
+      wrapTextCenter(ctx, event.title, 200, 435, 340, 18);
+
+      // Venue
+      ctx.fillStyle = '#888888';
+      ctx.font = '11px Arial';
+      ctx.fillText(`📍 ${event.venue}${event.city ? ', ' + event.city : ''}`, 200, 452);
+
+      // Booking date
+      const bookedOn = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      ctx.fillStyle = '#aaaaaa';
+      ctx.font = '10px Arial';
+      ctx.fillText(`Booked on: ${bookedOn}`, 200, 467);
 
       // Phone
       if (tk.phone) {
         ctx.fillStyle = '#888888';
-        ctx.font = '12px Arial';
-        ctx.fillText(`📞 +91 ${tk.phone}`, 200, 468);
+        ctx.font = '11px Arial';
+        ctx.fillText(`📞 +91 ${tk.phone}`, 200, 481);
       }
+
+      // Footer
+      ctx.fillStyle = '#B0A0CC';
+      ctx.font = '11px Arial';
+      ctx.fillText('Jai Shri Mataji 🙏', 200, tk.phone ? 496 : 496);
 
       // Footer
       ctx.fillStyle = '#B0A0CC';
@@ -915,37 +951,65 @@ function SuccessStep({ tickets, t, event }) {
       <p className="text-purple-600 font-medium mb-1">{t.greeting}</p>
       <p className="text-sm text-gray-400 mb-6">QR also sent to your email and WhatsApp</p>
 
-      {tickets.map((tk, i) => (
-        <div key={i} className="bg-purple-50 border border-purple-100 rounded-2xl p-5 mb-4">
-          <p className="font-semibold text-gray-800 text-lg mb-1">{tk.seeker_name}</p>
-          <p className="text-xs text-gray-500 mb-1 capitalize">{tk.age_category} · {tk.sex === 'male' ? '♂ Male' : '♀ Female'}</p>
-          <p className="text-xs text-gray-400 mb-4">{event.title}</p>
+      {tickets.map((tk, i) => {
+        const isFreeChild = tk.age_category === 'child' && parseFloat(tk.final_amount || 0) === 0;
+        const qrData = JSON.stringify({
+          uuid: tk.qr_uuid,
+          platform: 'sy-events',
+          venue: event.venue,
+          city: event.city
+        });
+        return (
+          <div key={i} className="bg-purple-50 border border-purple-100 rounded-2xl p-5 mb-4">
+            <p className="font-semibold text-gray-800 text-lg mb-1">{tk.seeker_name}</p>
+            <p className="text-xs text-gray-500 mb-1 capitalize">
+              {tk.age_category} · {tk.sex === 'male' ? '♂ Male' : '♀ Female'}
+            </p>
+            <p className="text-xs text-gray-400 mb-1">{event.title}</p>
+            <p className="text-xs text-gray-400 mb-4">📍 {event.venue}{event.city ? `, ${event.city}` : ''}</p>
 
-          <div className="flex justify-center mb-3">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(JSON.stringify({ uuid: tk.qr_uuid, platform: 'sy-events' }))}`}
-              alt="Ticket QR Code"
-              className="w-48 h-48 rounded-xl border-4 border-white shadow-md"
-            />
+            {isFreeChild ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 text-center">
+                <p className="text-sm text-blue-700 font-medium">👶 Child — Free Entry</p>
+                <p className="text-xs text-blue-500 mt-1">No coupon required for children</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-center mb-3">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData)}`}
+                    alt="Coupon QR Code"
+                    className="w-48 h-48 rounded-xl border-4 border-white shadow-md"
+                  />
+                </div>
+                <p className="text-xs text-gray-400 font-mono bg-white rounded-lg px-3 py-2 break-all mb-4">
+                  {tk.qr_uuid}
+                </p>
+                <button
+                  onClick={() => downloadTicket(tk)}
+                  className="w-full bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-purple-800 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  ⬇ Download Coupon Image
+                </button>
+              </>
+            )}
           </div>
+        );
+      })}
 
-          <p className="text-xs text-gray-400 font-mono bg-white rounded-lg px-3 py-2 break-all mb-4">
-            {tk.qr_uuid}
-          </p>
-
-          <button
-            onClick={() => downloadTicket(tk)}
-            className="w-full bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-purple-800 active:scale-95 transition-all flex items-center justify-center gap-2"
-          >
-            ⬇ Download Ticket Image
-          </button>
-        </div>
-      ))}
-
-      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mt-2">
+     <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mt-2">
         <p className="text-sm text-yellow-800 font-medium">📲 {t.scanQR}</p>
-        <p className="text-xs text-yellow-600 mt-1">Screenshot or download the ticket above</p>
+        <p className="text-xs text-yellow-600 mt-1">Screenshot or download the coupon above</p>
       </div>
+      {!localStorage.getItem('seeker_token') && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mt-3">
+          <p className="text-sm font-medium text-primary">🔐 Save your coupons for later</p>
+          <p className="text-xs text-gray-500 mt-1">Login or register with your mobile number to view all your past coupons anytime.</p>
+          <a href="/login" className="btn-primary block text-center mt-3 py-2.5 text-sm">
+            Login / Register →
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -1021,4 +1085,14 @@ function formatDate(start, end) {
   if (!end || start === end) return s;
   const e = new Date(end).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
   return `${s} – ${e}`;
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':');
+  const hour = parseInt(h);
+  const min = m || '00';
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${min} ${ampm}`;
 }

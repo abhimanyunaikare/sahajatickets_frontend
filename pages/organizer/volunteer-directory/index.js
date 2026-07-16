@@ -5,14 +5,20 @@ import api from '../../../lib/api';
 
 export default function VolunteerDirectory() {
   const router = useRouter();
-  const [data, setData] = useState({ volunteers: [], total: 0, interest_counts: [] });
+  const [data, setData] = useState({ volunteers: [], total: 0, interest_counts: [], profession_counts: [] });
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ interest: '', category: '', zone: '' });
+  const [filters, setFilters] = useState({ interest: '', category: '', zone: '', profession: '' });
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('sy_token');
+    const u = localStorage.getItem('sy_user');
     if (!token) { router.push('/organizer/login'); return; }
+    const parsed = JSON.parse(u || '{}');
+    if (parsed.role !== 'admin') {
+      router.push('/organizer/dashboard');
+      return;
+    }
     fetchDirectory();
   }, []);
 
@@ -23,6 +29,7 @@ export default function VolunteerDirectory() {
       if (f.interest) params.append('interest', f.interest);
       if (f.category) params.append('category', f.category);
       if (f.zone) params.append('zone', f.zone);
+      if (f.profession) params.append('profession', f.profession);
       const r = await api.get(`/volunteer-directory?${params.toString()}`);
       setData(r.data);
     } catch (err) { console.error(err); }
@@ -36,16 +43,18 @@ export default function VolunteerDirectory() {
   };
 
   const clearFilters = () => {
-    const reset = { interest: '', category: '', zone: '' };
+    const reset = { interest: '', category: '', zone: '', profession: '' };
     setFilters(reset);
     setSearch('');
     fetchDirectory(reset);
   };
 
   const exportCSV = () => {
-    const headers = ['Name', 'Age', 'Category', 'Relation', 'Phone', 'Email', 'Volunteer Interests'];
+    const headers = ['Name', 'Age', 'Category', 'Relation', 'Profession', 'City/Zone', 'Phone', 'Email', 'Volunteer Interests'];
     const rows = filtered.map(v => [
       v.seeker_name, v.age || '', v.age_category, v.relation,
+      v.profession || '',
+      v.zone_city || '',
       v.phone || '', v.email || '',
       (v.volunteer_interests || []).join('; ')
     ]);
@@ -65,7 +74,7 @@ export default function VolunteerDirectory() {
       v.email?.toLowerCase().includes(q);
   });
 
-  const hasFilters = filters.interest || filters.category || filters.zone;
+  const hasFilters = filters.interest || filters.category || filters.zone || filters.profession;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -136,6 +145,26 @@ export default function VolunteerDirectory() {
               value={filters.zone}
               onChange={e => setFilter('zone', e.target.value)} />
           </div>
+{/* Profession filter — badge style */}
+{data.profession_counts?.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs text-gray-500 mb-2">Filter by Profession</p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setFilter('profession', '')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all
+                    ${!filters.profession ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-600 hover:border-primary'}`}>
+                  All
+                </button>
+                {data.profession_counts.map(pc => (
+                  <button key={pc.profession} onClick={() => setFilter('profession', pc.profession === filters.profession ? '' : pc.profession)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all
+                      ${filters.profession === pc.profession ? 'bg-primary text-white border-primary' : 'border-gray-300 text-gray-600 hover:border-primary'}`}>
+                    {pc.profession} <span className="opacity-70">({pc.count})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex justify-between items-center mt-3">
             <p className="text-xs text-gray-400">
               Showing {filtered.length} of {data.total} volunteers
@@ -161,8 +190,7 @@ export default function VolunteerDirectory() {
             <table className="w-full text-sm">
               <thead className="bg-purple-50 border-b">
                 <tr>
-                  {['#', 'Name', 'Age', 'Category', 'Relation', 'Contact', 'Volunteer Interests'].map(h => (
-                    <th key={h} className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">{h}</th>
+                {['#', 'Name', 'Age', 'Category', 'Relation', 'Profession', 'City/Zone', 'Contact', 'Volunteer Interests'].map(h => (                    <th key={h} className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -178,6 +206,17 @@ export default function VolunteerDirectory() {
                       </span>
                     </td>
                     <td className="px-3 py-3 text-gray-500 capitalize text-xs">{v.relation}</td>
+                    <td className="px-3 py-3">
+                      {v.profession ? (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap
+                          ${filters.profession === v.profession
+                            ? 'bg-primary text-white'
+                            : 'bg-blue-50 text-blue-700'}`}>
+                          {v.profession}
+                        </span>
+                      ) : <span className="text-gray-300 text-xs">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-gray-500 text-xs">{v.zone_city || '—'}</td>
                     <td className="px-3 py-3">
                       <div className="text-xs text-gray-700">{v.phone || '—'}</div>
                       <div className="text-xs text-gray-400">{v.email || '—'}</div>

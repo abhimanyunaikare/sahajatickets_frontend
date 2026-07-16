@@ -18,7 +18,14 @@ export default function EventDashboard() {
     const token = localStorage.getItem('sy_token');
     const u = localStorage.getItem('sy_user');
     if (!token) { router.push('/organizer/login'); return; }
-    setUser(JSON.parse(u));
+    const parsed = JSON.parse(u || '{}');
+    setUser(parsed);
+    // Checkin seva cannot access event dashboard
+    if (parsed.role === 'checkin_seva') {
+      router.push('/organizer/dashboard');
+      return;
+    }
+    // Admin has full access — no restriction
     if (!id) return;
     fetchAll();
   }, [id]);
@@ -82,16 +89,20 @@ export default function EventDashboard() {
           <span className="text-gray-300">|</span>
           <span className="font-semibold text-gray-800 text-sm truncate max-w-xs">{event?.title}</span>
         </div>
-        <div className="flex gap-2">
-          <Link href={`/checkin?event_id=${id}`}
-            className="text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100">
-            📷 Check-in
-          </Link>
-          <Link href={`/organizer/volunteers/${id}`}
-            className="text-sm px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 font-medium">
-            🙌 Volunteers
-          </Link>
-          {user?.role === 'organizer' && (
+        <div className="flex gap-2 flex-wrap">
+          {(['organizer', 'admin', 'checkin_seva'].includes(user?.role)) && (
+            <Link href={`/checkin?event_id=${id}`}
+              className="text-sm px-3 py-1.5 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100">
+              📷 Check-in
+            </Link>
+          )}
+          {user?.role === 'admin' && (
+            <Link href={`/organizer/volunteers/${id}`}
+              className="text-sm px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 font-medium">
+              🙌 Volunteers
+            </Link>
+          )}
+          {(['organizer', 'admin'].includes(user?.role)) && (
             <button onClick={exportCSV}
               className="text-sm px-3 py-1.5 bg-purple-50 text-primary rounded-lg font-medium hover:bg-purple-100">
               ⬇ Export CSV

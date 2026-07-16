@@ -116,7 +116,7 @@ export default function SeekerLogin() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
         <div className="text-center mb-8">
           <div className="text-4xl mb-2">🪷</div>
-          <h1 className="text-2xl font-bold text-gray-900">Sahaja Yoga Events</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Sahaja Yoga Programs</h1>
           <p className="text-gray-500 text-sm mt-1">
             {step === 'phone' && 'Login or Register with your mobile number'}
             {step === 'otp' && `Enter OTP sent to +91 ${phone}`}
@@ -137,9 +137,10 @@ export default function SeekerLogin() {
                   className="input rounded-l-none"
                   type="tel"
                   maxLength={10}
+                  inputMode="numeric"
                   placeholder="10-digit mobile number"
                   value={phone}
-                  onChange={e => { setPhone(e.target.value.replace(/\D/g, '')); setError(''); }}
+                  onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
                   onKeyDown={e => e.key === 'Enter' && sendOTP()}
                   autoFocus
                 />
